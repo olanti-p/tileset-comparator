@@ -4,18 +4,18 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, Default, Deserialize, Serialize, Ord, PartialOrd, Eq, PartialEq, Hash)]
 #[serde(from = "SpriteIdSource")]
 pub struct SpriteIdWithWeight {
-    pub id: SingleOrVec<i32>,
-    pub weight: Option<i32>,
+    pub id: SingleOrVec<u32>,
+    pub weight: Option<u32>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
 #[serde(deny_unknown_fields)]
 enum SpriteIdSource {
-    IdOnly(SingleOrVec<i32>),
+    IdOnly(SingleOrVec<u32>),
     WithWeight {
-        weight: i32,
-        sprite: SingleOrVec<i32>,
+        weight: u32,
+        sprite: SingleOrVec<u32>,
     },
 }
 
