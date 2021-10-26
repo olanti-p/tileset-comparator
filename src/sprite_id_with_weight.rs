@@ -1,11 +1,11 @@
 use crate::single_or_vec::SingleOrVec;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Default, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, Ord, PartialOrd, Eq, PartialEq, Hash)]
 #[serde(from = "SpriteIdSource")]
 pub struct SpriteIdWithWeight {
-    id: SingleOrVec<i32>,
-    weight: Option<i32>,
+    pub id: SingleOrVec<i32>,
+    pub weight: Option<i32>,
 }
 
 #[derive(Debug, Deserialize)]
