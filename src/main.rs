@@ -117,8 +117,8 @@ fn load_tileset(base_path: &Path) -> Option<Tileset> {
     Some(tileset)
 }
 
-struct TileAtlas<'a> {
-    img: &'a RgbaImage,
+struct TileAtlas {
+    img: RgbaImage,
     sprite_w: u32,
     sprite_h: u32,
     tiles_x: u32,
@@ -127,7 +127,7 @@ struct TileAtlas<'a> {
     tiles_end: u32,
 }
 
-impl<'a> TileAtlas<'a> {
+impl TileAtlas {
     pub fn tiles_total(&self) -> u32 {
         self.tiles_x * self.tiles_y
     }
@@ -183,10 +183,20 @@ impl<'a> TileAtlas<'a> {
     }
 }
 
-fn hash_sprites(ids: &mut SingleOrVec<SpriteIdWithWeight>, atlas: &TileAtlas) {
+fn get_sprite_hash(atlases: &[TileAtlas], tile_id: u32) -> u32 {
+    for atlas in atlases {
+        if atlas.in_bounds(tile_id) {
+            return atlas.get_sprite_hash(tile_id);
+        }
+    }
+    eprintln!("WARNING: tile {} outside all atlas ranges", tile_id);
+    return 0;
+}
+
+fn hash_sprites(ids: &mut SingleOrVec<SpriteIdWithWeight>, atlases: &[TileAtlas]) {
     for spidw in &mut ids.0 {
         for id in &mut spidw.id.0 {
-            *id = atlas.get_sprite_hash(*id);
+            *id = get_sprite_hash(atlases, *id);
         }
     }
 }
@@ -200,6 +210,8 @@ impl Tileset {
         std::fs::create_dir(&sprites_path).unwrap();
 
         let mut tiles_start: u32 = 0;
+
+        let mut atlases: Vec<TileAtlas> = vec![];
 
         for tiles_new in &self.tiles_new {
             let img_path = self.base_path.join(&tiles_new.file);
@@ -218,12 +230,12 @@ impl Tileset {
             }
 
             let mut atlas = TileAtlas {
-                img: &img,
                 sprite_w,
                 sprite_h,
                 tiles_x: img.width() / sprite_w,
                 tiles_y: img.height() / sprite_h,
                 tiles_start,
+                img,
                 tiles_end: tiles_start,
             };
             atlas.tiles_end = atlas.tiles_start + atlas.tiles_total();
@@ -231,12 +243,16 @@ impl Tileset {
 
             tiles_start = atlas.tiles_end;
 
+            atlases.push(atlas);
+        }
+
+        for tiles_new in &self.tiles_new {
             for tile in &tiles_new.tiles {
                 for id in &tile.base.id.0 {
                     let mut cloned = tile.base.clone();
                     cloned.id = SingleOrVec::from_single(id.to_owned());
-                    hash_sprites(&mut cloned.fg, &atlas);
-                    hash_sprites(&mut cloned.bg, &atlas);
+                    hash_sprites(&mut cloned.fg, &atlases);
+                    hash_sprites(&mut cloned.bg, &atlases);
                     if cloned.rotates.is_none() {
                         cloned.rotates = Some(cloned.multitile);
                     }
@@ -245,8 +261,8 @@ impl Tileset {
                         for at_id in &at.id.0 {
                             let mut cloned_at = at.clone();
                             cloned_at.id = SingleOrVec::from_single(id.to_owned() + "_" + at_id);
-                            hash_sprites(&mut cloned_at.fg, &atlas);
-                            hash_sprites(&mut cloned_at.bg, &atlas);
+                            hash_sprites(&mut cloned_at.fg, &atlases);
+                            hash_sprites(&mut cloned_at.bg, &atlases);
                             cloned_at.rotates = Some(true);
                             cloned_at.height_3d = cloned.height_3d;
                             ret.push(cloned_at);
