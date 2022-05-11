@@ -13,6 +13,9 @@ use std::collections::hash_map::DefaultHasher;
 use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
+use std::io::{BufRead, BufReader};
+use std::fs::File;
+use clap::{Parser, Subcommand};
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -361,31 +364,78 @@ fn compare_tilesets(ts1: &Tileset, ts2: &Tileset) {
     }
 }
 
+fn load_ids_file(base_path: &Path) -> Option<Vec<String>> {
+    assert!(base_path.exists());
+    assert!(base_path.is_file());
+
+    let reader = BufReader::new(File::open(base_path).expect("Cannot open ids file."));
+
+    let mut ret = vec![];
+
+    for line in reader.lines() {
+        ret.push(line.unwrap());
+    }
+
+    Some( ret )
+}
+
+fn extract_tiles(ts: &Tileset, ids: &[String]) {
+    
+}
+
+#[derive(Parser)]
+struct Cli {
+    #[clap(subcommand)]
+    command: Commands,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    Compare{ a: String, b: String },
+    Extract{ tileset: String, ids_file: String }
+}
+
 fn main() {
-    let args: Vec<String> = std::env::args().collect();
+    let cli = Cli::parse();
 
-    if args.len() != 3 {
-        println!("Expected 2 paths: BN tileset and DDA tileset");
-        return;
+    match &cli.command {
+        Commands::Compare{ a, b } => {
+            println!("Tileset comparison mode.");
+
+            println!("Loading tileset A:  {}", a);
+            let tiles_a = load_tileset(Path::new(a));
+
+            println!("Loading tileset B: {}", b);
+            let tiles_b = load_tileset(Path::new(b));
+
+            if tiles_a.is_none() || tiles_b.is_none() {
+                println!("Aborted.");
+                return;
+            }
+
+            println!("Running comparison...");
+
+            compare_tilesets(tiles_a.as_ref().unwrap(), tiles_b.as_ref().unwrap());
+        },
+        Commands::Extract{ tileset, ids_file } => {
+            println!("Tile extraction mode.");
+
+            println!("Loading tileset:  {}", tileset);
+            let tiles = load_tileset(Path::new(tileset));
+
+            println!("Loading ids file: {}", ids_file);
+            let ids = load_ids_file(Path::new(ids_file));
+
+            if tiles.is_none() || ids.is_none() {
+                println!("Aborted.");
+                return;
+            }
+
+            println!("Extracting...");
+
+            extract_tiles(tiles.as_ref().unwrap(), ids.as_ref().unwrap());
+        }
     }
-
-    let path_bn = &args[1];
-    let path_dda = &args[2];
-
-    println!("Loading BN tileset:  {}", path_bn);
-    let tiles_bn = load_tileset(Path::new(path_bn));
-
-    println!("Loading DDA tileset: {}", path_dda);
-    let tiles_dda = load_tileset(Path::new(path_dda));
-
-    if tiles_bn.is_none() || tiles_dda.is_none() {
-        println!("Aborted.");
-        return;
-    }
-
-    println!("Running comparison...");
-
-    compare_tilesets(tiles_bn.as_ref().unwrap(), tiles_dda.as_ref().unwrap());
 
     println!("Done!");
 }
