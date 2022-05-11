@@ -149,6 +149,14 @@ impl<'a> TileAtlas<'a> {
     }
 
     pub fn get_sprite_hash(&self, tile_id: u32) -> u32 {
+        if !self.in_bounds(tile_id) {
+            eprintln!(
+                "WARNING: tile {} outside active atlas range {}..{}",
+                tile_id, self.tiles_start, self.tiles_end
+            );
+            return 0;
+        }
+
         let subimg = self.get_sprite(tile_id);
 
         let mut hasher = DefaultHasher::new();
@@ -178,7 +186,6 @@ impl<'a> TileAtlas<'a> {
 fn hash_sprites(ids: &mut SingleOrVec<SpriteIdWithWeight>, atlas: &TileAtlas) {
     for spidw in &mut ids.0 {
         for id in &mut spidw.id.0 {
-            assert!(atlas.in_bounds(*id));
             *id = atlas.get_sprite_hash(*id);
         }
     }
