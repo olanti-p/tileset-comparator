@@ -167,7 +167,7 @@ impl<'a> TileAtlas<'a> {
             px.hash(&mut hasher);
         }
 
-        // Indented narrowing conversion
+        // Intended narrowing conversion
         hasher.finish() as u32
     }
 
