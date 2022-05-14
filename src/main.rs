@@ -6,16 +6,16 @@ mod sprite_id_with_weight;
 use single_or_vec::SingleOrVec;
 use sprite_id_with_weight::SpriteIdWithWeight;
 
+use clap::{Parser, Subcommand};
 use image::io::Reader as ImageReader;
 use image::{DynamicImage, GenericImageView, ImageFormat, RgbaImage, SubImage};
 use serde::{Deserialize, Serialize};
 use std::collections::hash_map::DefaultHasher;
-use std::collections::HashSet;
-use std::hash::{Hash, Hasher};
-use std::path::{Path, PathBuf};
-use std::io::{BufRead, BufReader};
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
-use clap::{Parser, Subcommand};
+use std::hash::{Hash, Hasher};
+use std::io::{BufRead, BufReader};
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -204,8 +204,24 @@ fn hash_sprites(ids: &mut SingleOrVec<SpriteIdWithWeight>, atlases: &[TileAtlas]
     }
 }
 
+fn save_tile_as(atlases: &[TileAtlas], tile_id: u32, out_dir: &Path) {
+    for atlas in atlases {
+        if atlas.in_bounds(tile_id) {
+            let tile_hash = atlas.get_sprite_hash(tile_id);
+            let path = out_dir.join(format!("{:010}.png", tile_hash));
+            let subimg = atlas.get_sprite(tile_id);
+            subimg
+                .to_image()
+                .save_with_format(path, ImageFormat::Png)
+                .unwrap();
+            return;
+        }
+    }
+    panic!("Failed to save tile with id {}: tile not found.", tile_id);
+}
+
 impl Tileset {
-    pub fn generate_variations(&self) -> Vec<SingleTile> {
+    pub fn generate_variations(&self, do_hash: bool, do_dump: bool) -> (Vec<SingleTile>, Vec<TileAtlas>) {
         let mut ret = Vec::with_capacity(self.tiles_new.len());
 
         let sprites_path = self.base_path.join("sprites");
@@ -242,7 +258,9 @@ impl Tileset {
                 tiles_end: tiles_start,
             };
             atlas.tiles_end = atlas.tiles_start + atlas.tiles_total();
-            atlas.dump_sprites_to_dir(&sprites_path);
+            if do_dump {
+                atlas.dump_sprites_to_dir(&sprites_path);
+            }
 
             tiles_start = atlas.tiles_end;
 
@@ -254,8 +272,10 @@ impl Tileset {
                 for id in &tile.base.id.0 {
                     let mut cloned = tile.base.clone();
                     cloned.id = SingleOrVec::from_single(id.to_owned());
-                    hash_sprites(&mut cloned.fg, &atlases);
-                    hash_sprites(&mut cloned.bg, &atlases);
+                    if do_hash {
+                        hash_sprites(&mut cloned.fg, &atlases);
+                        hash_sprites(&mut cloned.bg, &atlases);
+                    }
                     if cloned.rotates.is_none() {
                         cloned.rotates = Some(cloned.multitile);
                     }
@@ -264,8 +284,10 @@ impl Tileset {
                         for at_id in &at.id.0 {
                             let mut cloned_at = at.clone();
                             cloned_at.id = SingleOrVec::from_single(id.to_owned() + "_" + at_id);
-                            hash_sprites(&mut cloned_at.fg, &atlases);
-                            hash_sprites(&mut cloned_at.bg, &atlases);
+                            if do_hash {
+                                hash_sprites(&mut cloned_at.fg, &atlases);
+                                hash_sprites(&mut cloned_at.bg, &atlases);
+                            }
                             cloned_at.rotates = Some(true);
                             cloned_at.height_3d = cloned.height_3d;
                             ret.push(cloned_at);
@@ -278,7 +300,7 @@ impl Tileset {
         }
 
         ret.sort();
-        ret
+        (ret, atlases)
     }
 }
 
@@ -314,8 +336,8 @@ fn dump_diffs(elems: &HashSet<&SingleTile>, ts: &Tileset) {
 }
 
 fn compare_tilesets(ts1: &Tileset, ts2: &Tileset) {
-    let vars1 = ts1.generate_variations();
-    let vars2 = ts2.generate_variations();
+    let vars1 = ts1.generate_variations(true, true).0;
+    let vars2 = ts2.generate_variations(true, true).0;
 
     {
         dump_variations(&vars1, ts1);
@@ -376,11 +398,61 @@ fn load_ids_file(base_path: &Path) -> Option<Vec<String>> {
         ret.push(line.unwrap());
     }
 
-    Some( ret )
+    Some(ret)
 }
 
-fn extract_tiles(ts: &Tileset, ids: &[String]) {
-    
+fn extract_tiles(ts: &Tileset, ids: &[String], out_dir: &Path) {
+    let (vars, atlases) = ts.generate_variations(false, false);
+    let (vars_hashed, _) = ts.generate_variations(true, true);
+
+    let vars_hm: HashMap<&str, usize> = vars
+        .iter()
+        .enumerate()
+        .map(|x| (x.1.id.0[0].as_str(), x.0))
+        .collect();
+
+    for id in ids {
+        if let Some(&idx) = vars_hm.get(id.as_str()) {
+            let this_tile_dir: PathBuf = out_dir.join(id);
+            std::fs::create_dir_all(&this_tile_dir).unwrap();
+
+            let out_json = this_tile_dir.join(id.to_owned() + ".json");
+
+            let tile_hashed = &vars_hashed[idx];
+            let out_str = serde_json::to_string_pretty(tile_hashed).unwrap();
+            std::fs::write(out_json, out_str).unwrap();
+
+            let variation = &vars[idx];
+
+            //let mut fg_ctr: usize = 0;
+            for fg in &variation.fg.0 {
+                for tile_id in &fg.id.0 {
+                    save_tile_as(&atlases, *tile_id, out_dir);
+                    /*
+                    let out_png =
+                        this_tile_dir.join(id.to_owned() + &format!("_fg_{}.png", fg_ctr));
+                    fg_ctr += 1;
+                    save_tile_as(&atlases, *tile_id, &out_png);
+                    */
+                }
+            }
+
+            //let mut bg_ctr: usize = 0;
+            for bg in &variation.bg.0 {
+                for tile_id in &bg.id.0 {
+                    save_tile_as(&atlases, *tile_id, out_dir);
+                    /*
+                    let out_png =
+                        this_tile_dir.join(id.to_owned() + &format!("_bg_{}.png", bg_ctr));
+                    bg_ctr += 1;
+                    save_tile_as(&atlases, *tile_id, &out_png);
+                    */
+                }
+            }
+        } else {
+            eprintln!("Failed to find tile with id {}", id);
+        }
+    }
 }
 
 #[derive(Parser)]
@@ -391,15 +463,15 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    Compare{ a: String, b: String },
-    Extract{ tileset: String, ids_file: String }
+    Compare { a: String, b: String },
+    Extract { tileset: String, ids_file: String },
 }
 
 fn main() {
     let cli = Cli::parse();
 
     match &cli.command {
-        Commands::Compare{ a, b } => {
+        Commands::Compare { a, b } => {
             println!("Tileset comparison mode.");
 
             println!("Loading tileset A:  {}", a);
@@ -416,12 +488,13 @@ fn main() {
             println!("Running comparison...");
 
             compare_tilesets(tiles_a.as_ref().unwrap(), tiles_b.as_ref().unwrap());
-        },
-        Commands::Extract{ tileset, ids_file } => {
+        }
+        Commands::Extract { tileset, ids_file } => {
             println!("Tile extraction mode.");
 
             println!("Loading tileset:  {}", tileset);
-            let tiles = load_tileset(Path::new(tileset));
+            let tileset_dir = PathBuf::from(tileset);
+            let tiles = load_tileset(&tileset_dir);
 
             println!("Loading ids file: {}", ids_file);
             let ids = load_ids_file(Path::new(ids_file));
@@ -433,7 +506,11 @@ fn main() {
 
             println!("Extracting...");
 
-            extract_tiles(tiles.as_ref().unwrap(), ids.as_ref().unwrap());
+            extract_tiles(
+                tiles.as_ref().unwrap(),
+                ids.as_ref().unwrap(),
+                &tileset_dir.join("extracted"),
+            );
         }
     }
 
