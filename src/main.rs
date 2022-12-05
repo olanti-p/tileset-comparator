@@ -22,6 +22,10 @@ use std::path::{Path, PathBuf};
 struct TilesetTileInfo {
     #[serde(default = "default_pixelscale")]
     pixelscale: f32,
+    #[serde(default = "default_retract_dist_min")]
+    retract_dist_min: f32,
+    #[serde(default = "default_retract_dist_max")]
+    retract_dist_max: f32,
     #[serde(default)]
     iso: bool,
     width: u32,
@@ -29,6 +33,14 @@ struct TilesetTileInfo {
 }
 
 fn default_pixelscale() -> f32 {
+    1.0
+}
+
+fn default_retract_dist_min() -> f32 {
+    -1.0
+}
+
+fn default_retract_dist_max() -> f32 {
     1.0
 }
 
